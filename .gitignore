@@ -1,0 +1,45 @@
+# ================= GENERAL =================
+
+# Node
+node_modules/
+dist/
+
+# Java
+*.class
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.dropbox_cache
+
+# Logs
+*.log
+
+# Packages
+*.jar
+
+# Maven
+target/
+
+# IDEs
+.idea/
+
+# Test reports
+TEST*.xml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Applications
+*.app
+*.exe
+*.war
+
+venv/
+.venv/
+YOLO-World/
+.streamlit/
+
+*.pyc
