@@ -3,6 +3,7 @@
 import streamlit as st
 
 from toolhub.annotator import load_annotator_dataset, render_annotated_image
+from toolhub.detection_viewer import render_class_summary, render_zoomable_image
 from .local_folder_picker import LocalFolderPickerError, pick_local_folder
 from toolhub.model_tester import ModelEvaluationError
 from toolhub.video_ui import _request_back_to_category
@@ -59,7 +60,12 @@ def _load_folder(dataset_path: str) -> None:
     st.session_state.pop("annotator-load-error", None)
 
 
-@st.dialog("Label applier results", width="large")
+@st.dialog(
+    "Label applier results",
+    width="large",
+    dismissible=True,
+    on_dismiss=_close_results_dialog,
+)
 def _show_results_dialog() -> None:
     samples = st.session_state.get("annotator-samples", [])
     annotations_by_image = st.session_state.get("annotator-annotations", {})
@@ -83,11 +89,12 @@ def _show_results_dialog() -> None:
 
     image_panel, control_panel = st.columns([7, 3], gap="large")
     with image_panel:
-        st.image(preview, width="content")
+        render_zoomable_image(preview, f"Annotated image {image_key}")
         st.caption(
             f"Image {current_frame} of {len(samples)} · {image_key} · "
             f"{len(boxes)} annotation(s)"
         )
+        render_class_summary(boxes, class_names)
         st.caption(
             "Labels show class IDs from the annotation files; no class-name "
             "mapping is included in label rows. Names are loaded from "
@@ -175,10 +182,8 @@ def _show_results_dialog() -> None:
             st.caption("Use ← and → to navigate between images.")
             st.divider()
             if st.button(
-                " ",
+                "Close results",
                 key="annotator-close-results",
-                icon=":material/close:",
-                help="Close results",
                 width="stretch",
             ):
                 _close_results_dialog()

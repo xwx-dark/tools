@@ -43,6 +43,7 @@ def pick_local_folder(initial_directory: str | Path | None = None) -> str | None
 def pick_local_file(
     initial_directory: str | Path | None = None,
     filetypes: tuple[tuple[str, str], ...] = (("All files", "*.*"),),
+    title: str = "Choose local file",
 ) -> str | None:
     """Return a selected local file path, or None when the dialog is cancelled."""
     try:
@@ -60,14 +61,14 @@ def pick_local_file(
         root.attributes("-topmost", True)
         selected = filedialog.askopenfilename(
             parent=root,
-            title="Choose local YOLO-World weights",
+            title=title,
             initialdir=str(initial_directory) if initial_directory else None,
             filetypes=filetypes,
         )
     except tk.TclError as exc:
         raise LocalFolderPickerError(
             "The native file picker is unavailable. Run Streamlit on the desktop "
-            "where the model file is accessible."
+            "where the selected file is accessible."
         ) from exc
     finally:
         if root is not None:

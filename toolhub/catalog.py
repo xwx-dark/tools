@@ -118,6 +118,10 @@ CATEGORIES = (
                 "Evaluate an Ultralytics YOLO detector against labeled images.",
             ),
             Tool(
+                "Model detector",
+                "Run an Ultralytics YOLO model on an image, video, or image folder.",
+            ),
+            Tool(
                 "Label applier",
                 "Preview labeled images with bounding boxes and browse the dataset.",
             ),

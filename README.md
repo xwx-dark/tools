@@ -66,7 +66,9 @@ relative paths. Each label is a YOLO text file containing normalized
 model. Evaluation reports precision, recall, F1, mAP@0.50, per-class detection
 percentages, false detections, missed detections, a confusion matrix, and a
 per-class confidence suggestion based on best F1 on this dataset. The
-suggested thresholds are tuning guidance, not independent validation.
+suggested thresholds are tuning guidance, not independent validation. Invalid
+detections returned by the model are skipped and listed in the evaluation
+warning rather than stopping the full dataset evaluation.
 
 Choose **AI → Label applier** and use the desktop folder picker to select the
 dataset. After loading the folder, choose **Show results** to open the image
@@ -78,6 +80,13 @@ change the preview scale. Class names are loaded from a dataset-root
 `annotator_classes.txt`; without a mapping, boxes use their numeric class IDs.
 This tool only previews annotations and does not modify the source images or
 labels.
+
+Choose **AI → Model detector** to select a trusted Ultralytics YOLO `.pt` model
+and detect objects in one image, a video, or a folder of images. The folder
+input searches nested folders for supported image files. Choose a confidence
+threshold, run detection, and use **Show results** to browse frames or images
+with the model's class labels, confidence values, and bounding boxes. A JSON
+summary can be downloaded; input files are not modified.
 
 Choose **AI → Annotator** to generate labels with either Ultralytics YOLO-World
 or a vision-capable model installed in your local Ollama instance. Select a
@@ -106,12 +115,12 @@ also need the CLIP package installed and `ViT-B-32.pt` cached under
 Ultralytics' configured `weights_dir/clip` folder. The UI explains these
 requirements when network access is restricted.
 
-All three AI tools use a native desktop folder picker and read the selected
-files directly without uploading or copying the dataset. Streamlit must run on
-the same desktop where the dataset is accessible; this picker is not available
-in a remote browser-hosted deployment. The model tester's `.pt` model path must
-also be accessible to that machine. Only evaluate trusted model files;
-checkpoints may contain serialized code. Install the model runtime with
+AI tools that read local files use native desktop file/folder pickers and access
+the selected files directly without uploading or copying the dataset. Streamlit
+must run on the same desktop where the files are accessible; these pickers are
+not available in a remote browser-hosted deployment. Model files must also be
+accessible to that machine. Only use trusted model files; checkpoints may
+contain serialized code. Install the model runtime with
 `python -m pip install -r requirements.txt`. Inference uses the runtime's
 default device selection and can be slow or memory intensive on CPU or large
 datasets.
@@ -147,9 +156,11 @@ toolhub/
   developer_ui.py      Developer tool pages and controls
   annotator.py          YOLO annotation loading and image rendering
   annotator_ui.py       AI annotation browsing page
-  local_folder_picker.py Native desktop folder picker for local datasets
+  local_folder_picker.py Native desktop file and folder pickers
+  model_detector.py     Local YOLO inference for image, video, and folder inputs
+  model_detector_ui.py  AI detection page and results viewer
   model_tester.py       YOLO inference and detection metrics
-  model_tester_ui.py   AI model test page and report charts
+  model_tester_ui.py    AI model test page and report charts
   video.py             FFmpeg-backed video processing operations
   video_ui.py          Video tool pages, progress, and downloads
 video_compressor.py    Existing standalone video-compression script

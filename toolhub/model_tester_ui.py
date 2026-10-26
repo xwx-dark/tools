@@ -140,6 +140,20 @@ def _show_evaluation_report(result: VideoResult) -> None:
         f"{summary['false_positives']} · Missed detections: "
         f"{summary['false_negatives']}"
     )
+    ignored_predictions = summary.get("ignored_invalid_predictions", 0)
+    if ignored_predictions:
+        invalid_images = summary.get("invalid_prediction_images", [])
+        image_list = ", ".join(invalid_images[:5])
+        more_images = len(invalid_images) - 5
+        image_detail = f" Affected images: {image_list}"
+        if more_images > 0:
+            image_detail += f", and {more_images} more."
+        else:
+            image_detail += "."
+        st.warning(
+            f"Ignored {ignored_predictions} invalid prediction(s) returned by the "
+            f"model; other images were still evaluated.{image_detail}"
+        )
 
     if classes:
         st.subheader("Per-class performance")

@@ -10,6 +10,10 @@ from toolhub.data_ui import DATA_TOOL_NAMES, render_data_tool_page
 from toolhub.developer_ui import DEVELOPER_TOOL_NAMES, render_developer_tool_page
 from toolhub.files_ui import FILE_TOOL_NAMES, render_file_tool_page
 from toolhub.image_ui import IMAGE_TOOL_NAMES, render_image_tool_page
+from toolhub.model_detector_ui import (
+    MODEL_DETECTOR_TOOL_NAMES,
+    render_model_detector_page,
+)
 from toolhub.model_tester_ui import MODEL_TESTER_TOOL_NAMES, render_model_tester_page
 from toolhub.world_annotator_ui import (
     WORLD_ANNOTATOR_TOOL_NAMES,
@@ -57,6 +61,7 @@ def _render_tool_cards(category: Category, search_query: str) -> None:
                             MODEL_TESTER_TOOL_NAMES
                             + ANNOTATOR_TOOL_NAMES
                             + WORLD_ANNOTATOR_TOOL_NAMES
+                            + MODEL_DETECTOR_TOOL_NAMES
                         ),
                     }
                     if tool.name in available_tools.get(category.name, ()):
@@ -137,6 +142,8 @@ def run_app() -> None:
                 render_annotator_page()
             elif active_tool == "Annotator":
                 render_world_annotator_page()
+            elif active_tool == "Model detector":
+                render_model_detector_page()
             else:
                 render_model_tester_page()
         else:

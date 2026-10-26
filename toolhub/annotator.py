@@ -87,19 +87,23 @@ def load_annotator_dataset(
 
 
 def render_annotated_image(
-    image_path: str | Path,
+    image_path: str | Path | Image.Image,
     annotations: list[BoxRecord],
     zoom: float = 1.0,
     class_names: dict[int, str] | None = None,
+    show_confidence: bool = False,
 ) -> Image.Image:
     """Return an annotated image scaled relative to a 1000-pixel preview width."""
     if not 0.5 <= zoom <= 2.0:
         raise AnnotatorError("Zoom must be between 50% and 200%.")
-    try:
-        with Image.open(image_path) as source:
-            image = source.convert("RGB")
-    except (OSError, ValueError) as exc:
-        raise AnnotatorError(f"Could not open image '{image_path}': {exc}") from exc
+    if isinstance(image_path, Image.Image):
+        image = image_path.convert("RGB")
+    else:
+        try:
+            with Image.open(image_path) as source:
+                image = source.convert("RGB")
+        except (OSError, ValueError) as exc:
+            raise AnnotatorError(f"Could not open image '{image_path}': {exc}") from exc
 
     draw = ImageDraw.Draw(image)
     line_width = max(2, round(min(image.size) * 0.003))
@@ -113,6 +117,8 @@ def render_annotated_image(
             annotation.class_id, f"Class {annotation.class_id}"
         )
         label = f"{class_name} [{annotation.class_id}]"
+        if show_confidence and hasattr(annotation, "confidence"):
+            label += f" {annotation.confidence:.0%}"
         _, top, _, bottom = draw.textbbox((0, 0), label, font=font)
         label_top = max(0, round(annotation.box[1]) - (bottom - top) - 6)
         draw.rectangle(

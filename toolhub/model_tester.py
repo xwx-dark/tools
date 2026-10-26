@@ -508,6 +508,8 @@ def evaluate_yolo_model(
                 )
 
     predictions: list[DetectionRecord] = []
+    ignored_invalid_predictions = 0
+    invalid_prediction_images: set[str] = set()
     for index, (image_path, image_key) in enumerate(samples):
         try:
             results = model.predict(
@@ -531,9 +533,14 @@ def evaluate_yolo_model(
                 for box, class_id, confidence in zip(
                     coordinates, class_ids, confidences
                 ):
-                    class_value = float(class_id)
-                    box_values = tuple(float(value) for value in box)
-                    confidence_value = float(confidence)
+                    try:
+                        class_value = float(class_id)
+                        box_values = tuple(float(value) for value in box)
+                        confidence_value = float(confidence)
+                    except (TypeError, ValueError, OverflowError):
+                        ignored_invalid_predictions += 1
+                        invalid_prediction_images.add(image_key)
+                        continue
                     if (
                         not math.isfinite(class_value)
                         or not class_value.is_integer()
@@ -544,9 +551,9 @@ def evaluate_yolo_model(
                         or box_values[2] <= box_values[0]
                         or box_values[3] <= box_values[1]
                     ):
-                        raise ModelEvaluationError(
-                            f"Inference returned an invalid detection for '{image_key}'."
-                        )
+                        ignored_invalid_predictions += 1
+                        invalid_prediction_images.add(image_key)
+                        continue
                     class_id = int(class_value)
                     if class_id not in class_names:
                         raise ModelEvaluationError(
@@ -577,6 +584,13 @@ def evaluate_yolo_model(
     )
     metrics["model"] = weights.name
     metrics["dataset"] = str(Path(dataset_path).expanduser().resolve())
+    metrics["summary"]["ignored_invalid_predictions"] = (
+        ignored_invalid_predictions
+    )
+    metrics["summary"]["invalid_prediction_images"] = sorted(
+        invalid_prediction_images,
+        key=str.casefold,
+    )
     metrics["classes"] = [
         {
             **item,
