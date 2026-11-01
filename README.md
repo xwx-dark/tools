@@ -13,6 +13,7 @@ shuffle the output order of those evenly spaced frames. Choose a trusted YOLO
 `.pt` model containing a `person` class;
 only extracted frames with a person detected above the confidence threshold
 are saved in a new subfolder of the chosen output folder.
+The Video to frames tool accepts uploads up to 100 GB.
 Each tool opens as a page with a Back button and a live progress bar while
 processing; the process button stays disabled until the job finishes or reports
 an error. Results are offered as downloads where applicable. FFmpeg and ffprobe

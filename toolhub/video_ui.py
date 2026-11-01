@@ -120,12 +120,13 @@ def render_video_navigation_warning() -> None:
         )
 
 
-def _upload_video(tool_name: str):
+def _upload_video(tool_name: str, max_upload_size: int | None = None):
     uploaded_file = st.file_uploader(
         "Choose a video",
         type=["mp4", "mov", "mkv", "avi", "webm", "m4v"],
         key=f"{tool_name}-upload",
         help="FFmpeg processes the file on the machine running this app.",
+        max_upload_size=max_upload_size,
     )
     return uploaded_file
 
@@ -440,7 +441,7 @@ def _render_thumbnail_extractor() -> None:
 
 
 def _render_video_to_frames() -> None:
-    uploaded_file = _upload_video("video-to-frames")
+    uploaded_file = _upload_video("video-to-frames", max_upload_size=102400)
     total_frames = _get_video_frame_count(uploaded_file)
     if total_frames is None:
         return
