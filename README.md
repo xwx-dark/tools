@@ -13,7 +13,10 @@ shuffle the output order of those evenly spaced frames. Choose a trusted YOLO
 `.pt` model containing a `person` class;
 only extracted frames with a person detected above the confidence threshold
 are saved in a new subfolder of the chosen output folder.
-The Video to frames tool accepts uploads up to 100 GB.
+The Video to frames tool accepts browser uploads up to the configured 10 GiB
+limit. On a desktop-hosted app, choose a local video instead to avoid browser or
+reverse-proxy upload limits; the selected file is read directly from the
+computer running Streamlit.
 Each tool opens as a page with a Back button and a live progress bar while
 processing; the process button stays disabled until the job finishes or reports
 an error. Results are offered as downloads where applicable. FFmpeg and ffprobe

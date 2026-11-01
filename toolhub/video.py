@@ -107,7 +107,7 @@ def probe_video_frame_count(input_path: Path) -> int:
             capture_output=True,
             check=True,
             text=True,
-            timeout=900,
+            timeout=3600,
         )
     except FileNotFoundError as exc:
         raise VideoProcessingError(
@@ -535,7 +535,7 @@ def extract_thumbnail(
 
 
 def extract_video_frames(
-    input_data: bytes,
+    input_data: bytes | Path,
     input_name: str,
     frame_count: int,
     total_frames: int,
@@ -557,6 +557,9 @@ def extract_video_frames(
         raise ValueError("Choose an image quality between 1 and 100.")
     if not 0.01 <= confidence_threshold <= 0.99:
         raise ValueError("Choose a person confidence threshold between 0.01 and 0.99.")
+
+    if isinstance(input_data, Path) and not input_data.is_file():
+        raise VideoProcessingError("The selected video file could not be found.")
 
     output_path = Path(output_directory).expanduser()
     if not output_path.is_dir():
@@ -610,8 +613,11 @@ def extract_video_frames(
             work_dir = Path(temp_dir)
             staging_path = work_dir / "frames"
             staging_path.mkdir()
-            input_path = work_dir / f"input{suffix}"
-            input_path.write_bytes(input_data)
+            if isinstance(input_data, Path):
+                input_path = input_data
+            else:
+                input_path = work_dir / f"input{suffix}"
+                input_path.write_bytes(input_data)
             capture = cv2.VideoCapture(str(input_path))
             if not capture.isOpened():
                 capture.release()

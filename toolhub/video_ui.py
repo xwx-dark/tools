@@ -120,13 +120,12 @@ def render_video_navigation_warning() -> None:
         )
 
 
-def _upload_video(tool_name: str, max_upload_size: int | None = None):
+def _upload_video(tool_name: str):
     uploaded_file = st.file_uploader(
         "Choose a video",
         type=["mp4", "mov", "mkv", "avi", "webm", "m4v"],
         key=f"{tool_name}-upload",
         help="FFmpeg processes the file on the machine running this app.",
-        max_upload_size=max_upload_size,
     )
     return uploaded_file
 
@@ -165,6 +164,29 @@ def _get_video_frame_count(uploaded_file) -> int | None:
                 )
                 path.write_bytes(input_data)
                 frame_count = probe_video_frame_count(path)
+    except VideoProcessingError as exc:
+        st.error(str(exc))
+        return None
+
+    cache[cache_key] = frame_count
+    return frame_count
+
+
+def _get_local_video_frame_count(input_path: Path) -> int | None:
+    try:
+        stat = input_path.stat()
+    except OSError as exc:
+        st.error(f"Could not read the selected video file: {exc}")
+        return None
+
+    cache_key = (str(input_path), stat.st_size, stat.st_mtime_ns)
+    cache = st.session_state.setdefault("video_frame_count_cache", {})
+    if cache_key in cache:
+        return cache[cache_key]
+
+    try:
+        with st.spinner("Counting video frames..."):
+            frame_count = probe_video_frame_count(input_path)
     except VideoProcessingError as exc:
         st.error(str(exc))
         return None
@@ -441,8 +463,50 @@ def _render_thumbnail_extractor() -> None:
 
 
 def _render_video_to_frames() -> None:
-    uploaded_file = _upload_video("video-to-frames", max_upload_size=102400)
-    total_frames = _get_video_frame_count(uploaded_file)
+    video_source = st.radio(
+        "Video source",
+        options=["Upload from browser", "Choose a local file"],
+        key="video-to-frames-source",
+        horizontal=True,
+    )
+    input_path: Path | None = None
+    uploaded_file = None
+    if video_source == "Upload from browser":
+        uploaded_file = _upload_video("video-to-frames")
+        if uploaded_file is None:
+            return
+        total_frames = _get_video_frame_count(uploaded_file)
+        input_name = uploaded_file.name
+    else:
+        local_video_key = "video-to-frames-local-video"
+        if local_video_key not in st.session_state:
+            st.session_state[local_video_key] = ""
+        if st.button("Choose local video", key="video-to-frames-browse-video"):
+            try:
+                selected_video = pick_local_file(
+                    Path(st.session_state[local_video_key]).parent
+                    if st.session_state[local_video_key]
+                    else None,
+                    (("Video files", "*.mp4 *.mov *.mkv *.avi *.webm *.m4v"),),
+                    title="Choose local video",
+                )
+            except LocalFolderPickerError as exc:
+                st.error(str(exc))
+            else:
+                if selected_video:
+                    st.session_state[local_video_key] = selected_video
+                    st.session_state.pop("video_tool_result", None)
+        if not st.session_state[local_video_key]:
+            st.info(
+                "Choose a video on the computer running this app. This avoids "
+                "browser or proxy upload-size limits."
+            )
+            return
+        input_path = Path(st.session_state[local_video_key])
+        st.code(str(input_path), language=None)
+        total_frames = _get_local_video_frame_count(input_path)
+        input_name = input_path.name
+
     if total_frames is None:
         return
 
@@ -555,8 +619,12 @@ def _render_video_to_frames() -> None:
     else:
         st.info("Choose the local folder where the extracted frames should be saved.")
 
-    input_data = uploaded_file.getvalue()
-    input_name = uploaded_file.name
+    if input_path is not None:
+        input_data: bytes | Path = input_path
+    elif uploaded_file is not None:
+        input_data = uploaded_file.getvalue()
+    else:
+        return
     _process_button(
         "Extract frames",
         lambda progress_callback: extract_video_frames(
