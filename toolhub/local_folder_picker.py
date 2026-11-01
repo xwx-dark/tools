@@ -7,7 +7,10 @@ class LocalFolderPickerError(RuntimeError):
     """The desktop folder picker could not be opened."""
 
 
-def pick_local_folder(initial_directory: str | Path | None = None) -> str | None:
+def pick_local_folder(
+    initial_directory: str | Path | None = None,
+    title: str = "Choose dataset folder",
+) -> str | None:
     """Return a selected local folder path, or None when the dialog is cancelled."""
     try:
         import tkinter as tk
@@ -24,7 +27,7 @@ def pick_local_folder(initial_directory: str | Path | None = None) -> str | None
         root.attributes("-topmost", True)
         selected = filedialog.askdirectory(
             parent=root,
-            title="Choose dataset folder",
+            title=title,
             initialdir=str(initial_directory) if initial_directory else None,
             mustexist=True,
         )

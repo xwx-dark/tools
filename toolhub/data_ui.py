@@ -1,10 +1,14 @@
 """Page-based user interfaces for CSV and JSON tools."""
 
 import csv
+import json
 from io import StringIO
+from pathlib import Path
+import tempfile
 
 import streamlit as st
 
+from make_vlm_postman_request import build_request_body
 from toolhub.data import convert_table, csv_to_json, format_json, preview_csv
 from toolhub.video import VideoResult
 from toolhub.video_ui import (
@@ -21,6 +25,7 @@ DATA_TOOL_NAMES = (
     "JSON formatter",
     "CSV to JSON",
     "Data table converter",
+    "Convert image to VLM request",
 )
 
 _DELIMITERS = {
@@ -120,6 +125,39 @@ def _render_table_converter() -> None:
     )
 
 
+def _render_image_vlm_request() -> None:
+    uploaded_file = st.file_uploader(
+        "Choose an image",
+        type=["bmp", "jpeg", "jpg", "png", "tif", "tiff", "webp"],
+        key="data-vlm-request-upload",
+        help="The generated JSON contains a JPEG-encoded image as a base64 string.",
+    )
+    if uploaded_file is None:
+        return
+
+    data = uploaded_file.getvalue()
+    filename = uploaded_file.name or "image.jpg"
+
+    def create_request(progress) -> VideoResult:
+        with tempfile.TemporaryDirectory(
+            prefix="everyday-tools-vlm-request-"
+        ) as directory:
+            image_path = Path(directory) / (
+                f"image{Path(filename).suffix or '.jpg'}"
+            )
+            image_path.write_bytes(data)
+            body = build_request_body(image_path)
+        progress(1.0)
+        request_json = json.dumps(body, indent=2) + "\n"
+        return VideoResult(
+            request_json.encode("utf-8"),
+            f"{Path(filename).stem or 'image'}-vlm-request.json",
+            "application/json",
+        )
+
+    _process_button("Convert image to VLM request", create_request)
+
+
 def _show_data_result(tool_name: str, result: VideoResult) -> None:
     if tool_name == "CSV viewer":
         rows = list(
@@ -153,6 +191,7 @@ def render_data_tool_page() -> None:
         "JSON formatter": _render_json_formatter,
         "CSV to JSON": _render_csv_to_json,
         "Data table converter": _render_table_converter,
+        "Convert image to VLM request": _render_image_vlm_request,
     }
     render_tool = tools.get(tool_name)
     if render_tool is None:

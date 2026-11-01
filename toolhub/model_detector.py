@@ -16,6 +16,7 @@ from toolhub.model_tester import (
     _class_names,
 )
 from toolhub.video import ProgressCallback, VideoResult
+from toolhub.ultralytics_compat import register_partial_label_training_module
 
 
 _IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
@@ -71,6 +72,7 @@ def _load_model(model_path: Path) -> Any:
             "'python -m pip install -r requirements.txt'."
         ) from exc
     try:
+        register_partial_label_training_module()
         model = YOLO(str(model_path))
     except Exception as exc:
         raise ModelEvaluationError(

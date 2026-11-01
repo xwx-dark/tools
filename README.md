@@ -7,11 +7,17 @@ remaining categories are browsable placeholders.
 ## Video tools
 
 Choose **Video** in the sidebar, then open a tool to compress, convert, trim,
-create a GIF, or extract a thumbnail. Each tool opens as a page with a Back
-button and a live progress bar while processing; the process button stays
-disabled until the job finishes or reports an error. Results are offered as
-downloads. FFmpeg and ffprobe must be installed and available on PATH on the
-machine running the app. Video operations are handled by
+create a GIF, extract a thumbnail, or save video frames as JPG/PNG images.
+Frame extraction can select evenly spaced frames across the full video or
+shuffle the output order of those evenly spaced frames. Choose a trusted YOLO
+`.pt` model containing a `person` class;
+only extracted frames with a person detected above the confidence threshold
+are saved in a new subfolder of the chosen output folder.
+Each tool opens as a page with a Back button and a live progress bar while
+processing; the process button stays disabled until the job finishes or reports
+an error. Results are offered as downloads where applicable. FFmpeg and ffprobe
+must be installed and available on PATH on the machine running the app. Video
+operations are handled by
 `toolhub/video.py`; page controls live in `toolhub/video_ui.py`.
 
 ## Audio tools
@@ -45,9 +51,10 @@ the machine running the app.
 ## Data tools
 
 Choose **Data** to preview CSV data (up to a selected sample size), validate
-and pretty-print JSON, convert CSV rows to a JSON array of records, or convert
-between CSV and TSV. CSV and TSV inputs are treated as UTF-8 text with a
-header row.
+and pretty-print JSON, convert CSV rows to a JSON array of records, convert
+between CSV and TSV, or convert an image into a VLM Postman request with a
+base64-encoded JPEG. CSV and TSV inputs are treated as UTF-8 text with a header
+row.
 
 ## Developer tools
 
@@ -86,7 +93,9 @@ and detect objects in one image, a video, or a folder of images. The folder
 input searches nested folders for supported image files. Choose a confidence
 threshold, run detection, and use **Show results** to browse frames or images
 with the model's class labels, confidence values, and bounding boxes. A JSON
-summary can be downloaded; input files are not modified.
+summary can be downloaded; input files are not modified. Checkpoints trained
+with the project's partial-label trainer can be loaded when its
+`partial_label_training.py` file is present in the project root.
 
 Choose **AI → Annotator** to generate labels with either Ultralytics YOLO-World
 or a vision-capable model installed in your local Ollama instance. Select a

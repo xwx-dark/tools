@@ -28,6 +28,7 @@ CATEGORIES = (
             Tool("Video trimmer", "Trim a clip to the section you need."),
             Tool("GIF maker", "Turn a video clip into an animated GIF."),
             Tool("Thumbnail extractor", "Save a frame as a video thumbnail."),
+            Tool("Video to frames", "Extract evenly spaced or random frames as images."),
         ),
     ),
     Category(
@@ -95,6 +96,10 @@ CATEGORIES = (
             Tool("JSON formatter", "Validate and pretty-print a JSON document."),
             Tool("CSV to JSON", "Convert CSV rows into a JSON array of records."),
             Tool("Data table converter", "Convert tabular data between CSV and TSV."),
+            Tool(
+                "Convert image to VLM request",
+                "Build a downloadable VLM Postman request from an image.",
+            ),
         ),
     ),
     Category(

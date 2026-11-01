@@ -2,6 +2,7 @@
 
 import json
 import os
+import random
 import subprocess
 import threading
 import tempfile
@@ -25,6 +26,13 @@ class VideoResult:
     data: bytes
     filename: str
     mime_type: str
+
+
+@dataclass(frozen=True)
+class VideoFramesResult:
+    output_directory: str
+    frame_count: int
+    discarded_count: int
 
 
 ProgressCallback = Callable[[float], None]
@@ -76,6 +84,50 @@ def probe_video(input_path: Path) -> VideoInfo:
     if not has_video:
         raise VideoProcessingError("The uploaded file does not contain a video stream.")
     return VideoInfo(duration=duration, has_audio=has_audio)
+
+
+def probe_video_frame_count(input_path: Path) -> int:
+    """Count the decodable frames in the first video stream using ffprobe."""
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-count_frames",
+        "-show_entries",
+        "stream=nb_read_frames",
+        "-of",
+        "default=nokey=1:noprint_wrappers=1",
+        str(input_path),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=900,
+        )
+    except FileNotFoundError as exc:
+        raise VideoProcessingError(
+            "ffprobe was not found. Install FFmpeg and add its bin folder to PATH."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise VideoProcessingError("Counting video frames timed out.") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.strip() or "Unsupported or invalid video file."
+        raise VideoProcessingError(f"Could not count video frames: {detail}") from exc
+
+    try:
+        frame_count = int(result.stdout.strip())
+    except ValueError as exc:
+        raise VideoProcessingError(
+            "Could not determine the number of frames in this video."
+        ) from exc
+    if frame_count < 1:
+        raise VideoProcessingError("The uploaded video contains no decodable frames.")
+    return frame_count
 
 
 def _run_ffmpeg(
@@ -479,4 +531,197 @@ def extract_thumbnail(
     mime_type = "image/jpeg" if image_format == "jpg" else "image/png"
     return _process(
         input_data, input_name, output_name, mime_type, build, progress
+    )
+
+
+def extract_video_frames(
+    input_data: bytes,
+    input_name: str,
+    frame_count: int,
+    total_frames: int,
+    randomize: bool,
+    output_directory: str | Path,
+    image_format: str,
+    quality: int,
+    model_path: str | Path,
+    confidence_threshold: float = 0.25,
+    progress: ProgressCallback | None = None,
+) -> VideoFramesResult:
+    """Save selected frames containing a person into a new output folder."""
+    if not 1 <= frame_count <= total_frames:
+        raise ValueError(f"Choose between 1 and {total_frames} frames.")
+    image_format = image_format.lower().lstrip(".")
+    if image_format not in {"jpg", "png"}:
+        raise ValueError("Choose JPG or PNG as the image format.")
+    if not 1 <= quality <= 100:
+        raise ValueError("Choose an image quality between 1 and 100.")
+    if not 0.01 <= confidence_threshold <= 0.99:
+        raise ValueError("Choose a person confidence threshold between 0.01 and 0.99.")
+
+    output_path = Path(output_directory).expanduser()
+    if not output_path.is_dir():
+        raise VideoProcessingError("Choose an existing output folder.")
+
+    from toolhub.model_detector import _load_model
+    from toolhub.model_tester import ModelEvaluationError, _class_names
+
+    try:
+        import cv2
+    except ImportError as exc:
+        raise VideoProcessingError(
+            "OpenCV is unavailable. Install project dependencies with "
+            "'python -m pip install -r requirements.txt'."
+        ) from exc
+
+    weights = Path(model_path).expanduser()
+    model = _load_model(weights)
+    class_names = _class_names(model)
+    person_class_ids = {
+        class_id
+        for class_id, class_name in class_names.items()
+        if class_name.strip().casefold() == "person"
+    }
+    if not person_class_ids:
+        raise ModelEvaluationError(
+            "The selected model has no class named 'person'. Choose a model "
+            "that can detect people."
+        )
+
+    stem = Path(input_name).stem
+    safe_stem = "".join(
+        "_" if character in '<>:"/\\|?*' else character for character in stem
+    ).strip(" .")
+    safe_stem = safe_stem or "video"
+
+    if frame_count == 1:
+        selected_frames = [total_frames // 2]
+    else:
+        selected_frames = [
+            round(index * (total_frames - 1) / (frame_count - 1))
+            for index in range(frame_count)
+        ]
+    if randomize:
+        random.shuffle(selected_frames)
+    suffix = Path(input_name).suffix or ".mp4"
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix=f".{safe_stem}_frames-", dir=output_path
+        ) as temp_dir:
+            work_dir = Path(temp_dir)
+            staging_path = work_dir / "frames"
+            staging_path.mkdir()
+            input_path = work_dir / f"input{suffix}"
+            input_path.write_bytes(input_data)
+            capture = cv2.VideoCapture(str(input_path))
+            if not capture.isOpened():
+                capture.release()
+                raise VideoProcessingError("Could not open the uploaded video.")
+
+            output_positions = {
+                frame_index: output_index
+                for output_index, frame_index in enumerate(selected_frames, start=1)
+            }
+            saved_frames = 0
+            last_selected_frame = max(selected_frames)
+            try:
+                for frame_index in range(last_selected_frame + 1):
+                    success, frame = capture.read()
+                    if not success:
+                        break
+                    if frame_index in output_positions:
+                        encode_parameters = (
+                            [cv2.IMWRITE_JPEG_QUALITY, quality]
+                            if image_format == "jpg"
+                            else []
+                        )
+                        encoded, buffer = cv2.imencode(
+                            f".{image_format}", frame, encode_parameters
+                        )
+                        if not encoded:
+                            raise VideoProcessingError(
+                                f"Could not encode extracted frame "
+                                f"{frame_index + 1} as {image_format.upper()}."
+                            )
+                        frame_path = staging_path / (
+                            f"frame_{output_positions[frame_index]:05d}."
+                            f"{image_format}"
+                        )
+                        frame_path.write_bytes(buffer.tobytes())
+                        saved_frames += 1
+                    if progress is not None:
+                        progress(
+                            0.5 * (frame_index + 1) / (last_selected_frame + 1)
+                        )
+            finally:
+                capture.release()
+
+            if saved_frames != frame_count:
+                raise VideoProcessingError(
+                    f"Expected to extract {frame_count} selected frames, but "
+                    f"only {saved_frames} could be decoded."
+                )
+
+            extracted_frames = sorted(
+                staging_path.glob(f"frame_*.{image_format}")
+            )
+            if len(extracted_frames) != frame_count:
+                raise VideoProcessingError(
+                    f"Expected {frame_count} frames, but extracted "
+                    f"{len(extracted_frames)}."
+                )
+
+            discarded_count = 0
+            for index, frame_path in enumerate(extracted_frames):
+                try:
+                    predictions = model.predict(
+                        source=str(frame_path),
+                        conf=confidence_threshold,
+                        verbose=False,
+                        save=False,
+                    )
+                    if not predictions:
+                        raise ModelEvaluationError(
+                            f"Model returned no result for '{frame_path.name}'."
+                        )
+                    boxes = predictions[0].boxes
+                    class_ids = (
+                        boxes.cls.cpu().tolist()
+                        if boxes is not None and len(boxes)
+                        else []
+                    )
+                except ModelEvaluationError:
+                    raise
+                except Exception as exc:
+                    raise ModelEvaluationError(
+                        f"Person detection failed for '{frame_path.name}': "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
+
+                if not any(int(class_id) in person_class_ids for class_id in class_ids):
+                    frame_path.unlink()
+                    discarded_count += 1
+                if progress is not None:
+                    progress(0.5 + 0.5 * (index + 1) / len(extracted_frames))
+
+            destination = output_path / f"{safe_stem}_frames"
+            suffix_number = 2
+            while True:
+                try:
+                    staging_path.rename(destination)
+                except FileExistsError:
+                    destination = output_path / (
+                        f"{safe_stem}_frames_{suffix_number}"
+                    )
+                    suffix_number += 1
+                else:
+                    break
+    except OSError as exc:
+        raise VideoProcessingError(
+            f"Could not save extracted frames in the selected folder: {exc}"
+        ) from exc
+
+    return VideoFramesResult(
+        output_directory=str(destination.resolve()),
+        frame_count=frame_count - discarded_count,
+        discarded_count=discarded_count,
     )

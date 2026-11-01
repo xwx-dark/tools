@@ -10,6 +10,7 @@ from typing import Any
 from PIL import Image
 
 from toolhub.video import ProgressCallback, VideoProcessingError, VideoResult
+from toolhub.ultralytics_compat import register_partial_label_training_module
 
 
 class ModelEvaluationError(VideoProcessingError):
@@ -494,6 +495,7 @@ def evaluate_yolo_model(
             "'python -m pip install -r requirements.txt'."
         ) from exc
     try:
+        register_partial_label_training_module()
         model = YOLO(str(weights))
     except Exception as exc:
         raise ModelEvaluationError(

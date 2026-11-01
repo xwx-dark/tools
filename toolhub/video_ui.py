@@ -1,6 +1,7 @@
 """Page-based user interfaces and shared processing state for media tools."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
+import hashlib
 from pathlib import Path
 from queue import Empty, Queue
 import tempfile
@@ -9,15 +10,23 @@ from typing import Callable
 import streamlit as st
 
 from toolhub.video import (
+    VideoFramesResult,
     VideoInfo,
     VideoProcessingError,
     VideoResult,
     compress_video,
     convert_video,
     extract_thumbnail,
+    extract_video_frames,
     make_gif,
     probe_video,
+    probe_video_frame_count,
     trim_video,
+)
+from toolhub.local_folder_picker import (
+    LocalFolderPickerError,
+    pick_local_file,
+    pick_local_folder,
 )
 
 
@@ -27,6 +36,7 @@ VIDEO_TOOL_NAMES = (
     "Video trimmer",
     "GIF maker",
     "Thumbnail extractor",
+    "Video to frames",
 )
 
 _VIDEO_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="video-tool")
@@ -134,6 +144,34 @@ def _get_video_info(uploaded_file) -> VideoInfo | None:
         return None
 
 
+def _get_video_frame_count(uploaded_file) -> int | None:
+    if uploaded_file is None:
+        return None
+
+    cache_key = getattr(uploaded_file, "file_id", None)
+    input_data = uploaded_file.getvalue()
+    if cache_key is None:
+        cache_key = (uploaded_file.name, hashlib.sha256(input_data).hexdigest())
+    cache = st.session_state.setdefault("video_frame_count_cache", {})
+    if cache_key in cache:
+        return cache[cache_key]
+
+    try:
+        with st.spinner("Counting video frames..."):
+            with tempfile.TemporaryDirectory(prefix="everyday-tools-probe-") as directory:
+                path = Path(directory) / (
+                    f"video{Path(uploaded_file.name or 'video.mp4').suffix or '.mp4'}"
+                )
+                path.write_bytes(input_data)
+                frame_count = probe_video_frame_count(path)
+    except VideoProcessingError as exc:
+        st.error(str(exc))
+        return None
+
+    cache[cache_key] = frame_count
+    return frame_count
+
+
 def _show_result(result: VideoResult) -> None:
     st.success("Your file is ready.")
     st.download_button(
@@ -148,7 +186,9 @@ def _show_result(result: VideoResult) -> None:
 
 def _process_button(
     label: str,
-    operation: Callable[[Callable[[float], None]], VideoResult],
+    operation: Callable[
+        [Callable[[float], None]], VideoResult | VideoFramesResult
+    ],
     disabled: bool = False,
 ) -> None:
     _poll_video_job()
@@ -399,6 +439,142 @@ def _render_thumbnail_extractor() -> None:
     )
 
 
+def _render_video_to_frames() -> None:
+    uploaded_file = _upload_video("video-to-frames")
+    total_frames = _get_video_frame_count(uploaded_file)
+    if total_frames is None:
+        return
+
+    st.caption(f"Video contains {total_frames:,} decodable frames.")
+    count_key = "video-to-frames-count"
+    if st.session_state.get(count_key, min(10, total_frames)) > total_frames:
+        st.session_state[count_key] = min(10, total_frames)
+    frame_count = st.number_input(
+        "Number of frames to extract",
+        min_value=1,
+        max_value=total_frames,
+        value=min(10, total_frames),
+        step=1,
+        key=count_key,
+        help=(
+            "You can extract up to every frame in the uploaded video. With "
+            "randomization off, frames are evenly spaced from beginning to end."
+        ),
+    )
+    randomize = st.checkbox(
+        "Randomize frame selection",
+        key="video-to-frames-randomize",
+        help=(
+            "Keep the same evenly spaced frames from across the video, but "
+            "shuffle their order in the output."
+        ),
+    )
+    image_format = st.selectbox(
+        "Image format",
+        options=["JPG", "PNG"],
+        key="video-to-frames-format",
+    )
+    quality = st.slider(
+        "JPG quality",
+        min_value=1,
+        max_value=100,
+        value=90,
+        key="video-to-frames-quality",
+        disabled=image_format == "PNG",
+        help="Higher quality produces larger JPG files.",
+    )
+
+    model_key = "video-to-frames-model-path"
+    if model_key not in st.session_state:
+        st.session_state[model_key] = ""
+    if st.button(
+        "Choose person detection model (.pt)",
+        key="video-to-frames-browse-model",
+    ):
+        try:
+            selected_model = pick_local_file(
+                Path(st.session_state[model_key]).parent
+                if st.session_state[model_key]
+                else None,
+                (("PyTorch weights", "*.pt"),),
+                title="Choose person detection model",
+            )
+        except LocalFolderPickerError as exc:
+            st.error(str(exc))
+        else:
+            if selected_model:
+                st.session_state[model_key] = selected_model
+                st.session_state.pop("video_tool_result", None)
+
+    model_path = st.session_state[model_key]
+    if model_path:
+        st.code(model_path, language=None)
+    else:
+        st.info("Choose a YOLO .pt model that includes a 'person' class.")
+    confidence_threshold = st.slider(
+        "Person detection confidence",
+        min_value=0.01,
+        max_value=0.99,
+        value=0.25,
+        step=0.01,
+        key="video-to-frames-person-confidence",
+        help="Frames are kept when at least one person detection meets this threshold.",
+    )
+    trusted_model = st.checkbox(
+        "I trust this model file and its source.",
+        key="video-to-frames-trusted-model",
+        help="Only load trusted model files; serialized checkpoints may contain code.",
+    )
+    if not trusted_model:
+        st.warning("Confirm that the model file is trusted before running detection.")
+
+    folder_key = "video-to-frames-output-folder"
+    if folder_key not in st.session_state:
+        st.session_state[folder_key] = ""
+    if st.button("Choose output folder", key="video-to-frames-browse-folder"):
+        try:
+            selected_folder = pick_local_folder(
+                st.session_state[folder_key] or None,
+                title="Choose frame output folder",
+            )
+        except LocalFolderPickerError as exc:
+            st.error(str(exc))
+        else:
+            if selected_folder and selected_folder != st.session_state[folder_key]:
+                st.session_state[folder_key] = selected_folder
+                st.session_state.pop("video_tool_result", None)
+
+    output_directory = st.session_state[folder_key]
+    if output_directory:
+        st.code(output_directory, language=None)
+        st.caption(
+            "Frames are saved in a new video-named subfolder. Existing results "
+            "are never overwritten."
+        )
+    else:
+        st.info("Choose the local folder where the extracted frames should be saved.")
+
+    input_data = uploaded_file.getvalue()
+    input_name = uploaded_file.name
+    _process_button(
+        "Extract frames",
+        lambda progress_callback: extract_video_frames(
+            input_data,
+            input_name,
+            int(frame_count),
+            total_frames,
+            randomize,
+            output_directory,
+            image_format.lower(),
+            quality,
+            model_path,
+            confidence_threshold,
+            progress_callback,
+        ),
+        disabled=not output_directory or not model_path or not trusted_model,
+    )
+
+
 @st.fragment(run_every=0.25)
 def render_video_tool_page() -> None:
     _poll_video_job()
@@ -419,6 +595,7 @@ def render_video_tool_page() -> None:
         "Video trimmer": _render_trimmer,
         "GIF maker": _render_gif_maker,
         "Thumbnail extractor": _render_thumbnail_extractor,
+        "Video to frames": _render_video_to_frames,
     }
     render_tool = tools.get(tool_name)
     if render_tool is None:
@@ -429,6 +606,14 @@ def render_video_tool_page() -> None:
     result = st.session_state.get("video_tool_result")
     result_tool = st.session_state.get("video_processing_tool")
     active_tool = st.session_state.get("active_tool")
-    if isinstance(result, VideoResult) and result_tool == active_tool:
+    if isinstance(result, VideoFramesResult) and result_tool == active_tool:
+        st.divider()
+        st.success(
+            f"Kept {result.frame_count:,} frame(s) containing a person and "
+            f"discarded {result.discarded_count:,} frame(s) without a person."
+        )
+        st.write("Saved to:")
+        st.code(result.output_directory, language=None)
+    elif isinstance(result, VideoResult) and result_tool == active_tool:
         st.divider()
         _show_result(result)
